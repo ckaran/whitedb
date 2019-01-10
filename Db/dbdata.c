@@ -3,7 +3,7 @@
 * $Version: $
 *
 * Copyright (c) Tanel Tammet 2004,2005,2006,2007,2008,2009
-* Copyright (c) Priit Järv 2009,2010,2011,2013,2014
+* Copyright (c) Priit Järv 2009,2010,2011,2013,2014,2017
 *
 * Contact: tanel.tammet@gmail.com
 *
@@ -62,6 +62,7 @@ extern "C" {
 #include "dbindex.h"
 #include "dbcompare.h"
 #include "dblock.h"
+#include "dbutil.h"
 
 /* ====== Private headers and defs ======== */
 
@@ -636,6 +637,11 @@ wg_int wg_set_field(void* db, void* record, wg_int fieldnr, wg_int data) {
   fieldadr=((gint*)record)+RECORD_HEADER_GINTS+fieldnr;
   fielddata=*fieldadr;
 
+  /* Skip changes if the value does not change */
+  if(fielddata == data) {
+    return 0;
+  }
+
   /* Update index(es) while the old value is still in the db */
 #ifdef USE_INDEX_TEMPLATE
   if(!is_special_record(record) && fieldnr<=MAX_INDEXED_FIELDNR &&\
@@ -719,12 +725,6 @@ wg_int wg_set_field(void* db, void* record, wg_int fieldnr, wg_int data) {
 setfld_backlink_removed:
 #endif
 
-  //printf("wg_set_field adr %d offset %d\n",fieldadr,ptrtooffset(db,fieldadr));
-  if (isptr(fielddata)) {
-    //printf("wg_set_field freeing old data\n");
-    free_field_encoffset(db,fielddata);
-  }
-  (*fieldadr)=data; // store data to field
 #ifdef USE_CHILD_DB
   if (islongstr(data) && offset_owner == dbmemseg(db)) {
 #else
@@ -734,6 +734,12 @@ setfld_backlink_removed:
     strptr = (gint *) offsettoptr(db,decode_longstr_offset(data));
     ++(*(strptr+LONGSTR_REFCOUNT_POS));
   }
+  //printf("wg_set_field adr %d offset %d\n",fieldadr,ptrtooffset(db,fieldadr));
+  if (isptr(fielddata)) {
+    //printf("wg_set_field freeing old data\n");
+    free_field_encoffset(db,fielddata);
+  }
+  (*fieldadr)=data; // store data to field
 
   /* Update index after new value is written */
 #ifdef USE_INDEX_TEMPLATE
@@ -2751,7 +2757,7 @@ gint wg_decode_unistr_len(void* db, gint data, gint type) {
   if (islongstr(data)) {
     objptr = (gint *) offsettoptr(db,decode_longstr_offset(data));
     objsize=getusedobjectsize(*objptr);
-    dataptr=((char*)(objptr))+(LONGSTR_HEADER_GINTS*sizeof(gint));
+    //dataptr=((char*)(objptr))+(LONGSTR_HEADER_GINTS*sizeof(gint));
     //printf("dataptr to read from %d str '%s' of len %d\n",dataptr,dataptr,strlen(dataptr));
     strsize=objsize-(((*(objptr+LONGSTR_META_POS))&LONGSTR_META_LENDIFMASK)>>LONGSTR_META_LENDIFSHFT);
     return strsize-1;
@@ -3165,7 +3171,7 @@ static void recptr_clearbit(void *db,void *ptr) {
 static gint show_data_error(void* db, char* errmsg) {
 #ifdef WG_NO_ERRPRINT
 #else
-  fprintf(stderr,"wg data handling error: %s\n",errmsg);
+  LOG_ERROR(-1, "wg data handling error: %s\n", errmsg);
 #endif
   return -1;
 
@@ -3174,7 +3180,7 @@ static gint show_data_error(void* db, char* errmsg) {
 static gint show_data_error_nr(void* db, char* errmsg, gint nr) {
 #ifdef WG_NO_ERRPRINT
 #else
-  fprintf(stderr,"wg data handling error: %s %d\n", errmsg, (int) nr);
+  LOG_ERROR(-1, "wg data handling error: %s %d\n", errmsg, (int)nr);
 #endif
   return -1;
 
@@ -3183,7 +3189,7 @@ static gint show_data_error_nr(void* db, char* errmsg, gint nr) {
 static gint show_data_error_double(void* db, char* errmsg, double nr) {
 #ifdef WG_NO_ERRPRINT
 #else
-  fprintf(stderr,"wg data handling error: %s %f\n",errmsg,nr);
+  LOG_ERROR(-1, "wg data handling error: %s %f\n",errmsg,nr);
 #endif
   return -1;
 
@@ -3192,7 +3198,7 @@ static gint show_data_error_double(void* db, char* errmsg, double nr) {
 static gint show_data_error_str(void* db, char* errmsg, char* str) {
 #ifdef WG_NO_ERRPRINT
 #else
-  fprintf(stderr,"wg data handling error: %s %s\n",errmsg,str);
+  LOG_ERROR(-1, "wg data handling error: %s %s\n",errmsg,str);
 #endif
   return -1;
 }
